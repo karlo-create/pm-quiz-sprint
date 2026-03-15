@@ -5,12 +5,13 @@ import {
   useContext,
   useEffect,
   useState,
+  useCallback,
   type ReactNode,
 } from "react";
 import {
   onAuthStateChanged,
   signInWithPopup,
-  signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut,
   GoogleAuthProvider,
   type User,
@@ -42,41 +43,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(getClientAuth(), (u) => {
+    const auth = getClientAuth();
+    // Handle redirect result (in case we used redirect flow)
+    getRedirectResult(auth).catch(console.error);
+
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
     });
     return unsubscribe;
   }, []);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(getClientAuth(), provider);
-    } catch (err: unknown) {
-      const error = err as { code?: string };
-      // Popup blocked or unavailable — fall back to redirect
-      if (
-        error.code === "auth/popup-blocked" ||
-        error.code === "auth/popup-closed-by-user" ||
-        error.code === "auth/cancelled-popup-request"
-      ) {
-        await signInWithRedirect(getClientAuth(), provider);
-        return;
-      }
-      console.error("Google sign-in failed:", err);
-      throw err;
-    }
-  };
+    provider.setCustomParameters({ prompt: "select_account" });
+    const auth = getClientAuth();
+    await signInWithPopup(auth, provider);
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await firebaseSignOut(getClientAuth());
-  };
+  }, []);
 
-  const getIdToken = async (): Promise<string | null> => {
+  const getIdToken = useCallback(async (): Promise<string | null> => {
     if (!user) return null;
     return user.getIdToken();
-  };
+  }, [user]);
 
   return (
     <AuthContext.Provider
