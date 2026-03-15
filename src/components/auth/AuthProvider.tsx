@@ -10,6 +10,7 @@ import {
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   GoogleAuthProvider,
   type User,
@@ -50,7 +51,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(getClientAuth(), provider);
+    try {
+      await signInWithPopup(getClientAuth(), provider);
+    } catch (err: unknown) {
+      const error = err as { code?: string };
+      // Popup blocked or unavailable — fall back to redirect
+      if (
+        error.code === "auth/popup-blocked" ||
+        error.code === "auth/popup-closed-by-user" ||
+        error.code === "auth/cancelled-popup-request"
+      ) {
+        await signInWithRedirect(getClientAuth(), provider);
+        return;
+      }
+      console.error("Google sign-in failed:", err);
+      throw err;
+    }
   };
 
   const signOut = async () => {
