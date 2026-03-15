@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import { getAuth, browserLocalPersistence, setPersistence, type Auth } from "firebase/auth";
 import {
   getFirestore,
   type Firestore,
@@ -26,7 +26,10 @@ function getFirebaseApp(): FirebaseApp {
 }
 
 export function getClientAuth(): Auth {
-  if (!_auth) _auth = getAuth(getFirebaseApp());
+  if (!_auth) {
+    _auth = getAuth(getFirebaseApp());
+    setPersistence(_auth, browserLocalPersistence).catch(console.error);
+  }
   return _auth;
 }
 
