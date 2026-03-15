@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Questions are readable by any authenticated user, writable only by admin (via Admin SDK)
+    match /questions/{questionId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Admin SDK bypasses rules
+    }
+
+    // Question batches readable by authenticated users, writable only by admin
+    match /question_batches/{batchId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // User profiles: users can read/write their own profile
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Subcollections under user
+      match /question_progress/{progressId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /quiz_sessions/{sessionId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /attempts/{attemptId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Analytics snapshots: readable by authenticated users
+    match /analytics/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}
