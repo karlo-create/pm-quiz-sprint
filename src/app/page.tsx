@@ -17,7 +17,7 @@ import {
   getDoc,
   setDoc,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { getClientDb } from "@/lib/firebase/client";
 
 export default function HomePage() {
   const { user, loading } = useAuth();
@@ -40,7 +40,7 @@ export default function HomePage() {
     if (!user) return;
 
     const loadData = async () => {
-      const profileRef = doc(db, "users", user.uid);
+      const profileRef = doc(getClientDb(), "users", user.uid);
       const profileSnap = await getDoc(profileRef);
 
       if (profileSnap.exists()) {
@@ -60,23 +60,26 @@ export default function HomePage() {
           longestStreak: 0,
           lastQuizDate: null,
         };
-        await setDoc(profileRef, newProfile);
+        await setDoc(doc(getClientDb(), "users", user.uid), newProfile);
         setProfile(newProfile);
       }
 
-      const sessionsRef = collection(
-        db,
-        `users/${user.uid}/quiz_sessions`
-      );
-      const q = query(
-        sessionsRef,
-        where("status", "==", "in-progress"),
-        orderBy("startedAt", "desc"),
-        limit(1)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        setUnfinishedSession(snap.docs[0].id);
+      try {
+        const sessionsRef = collection(
+          getClientDb(),
+          `users/${user.uid}/quiz_sessions`
+        );
+        const q = query(
+          sessionsRef,
+          where("status", "==", "in-progress"),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          setUnfinishedSession(snap.docs[0].id);
+        }
+      } catch {
+        // Ignore — no unfinished session or index not ready
       }
     };
 
@@ -86,10 +89,15 @@ export default function HomePage() {
   const handleStartQuiz = async (mode: QuizMode) => {
     setStartingQuiz(mode);
     try {
-      const data = await apiFetch<{ sessionId: string }>("/api/build-quiz", {
+      const data = await apiFetch<{ sessionId: string; questions: unknown[] }>("/api/build-quiz", {
         method: "POST",
         body: JSON.stringify({ mode }),
       });
+      // Store quiz data so the quiz page doesn't need another API call
+      sessionStorage.setItem(
+        `quiz-${data.sessionId}`,
+        JSON.stringify(data)
+      );
       router.push(`/quiz/${data.sessionId}`);
     } catch (err) {
       console.error("Failed to start quiz:", err);

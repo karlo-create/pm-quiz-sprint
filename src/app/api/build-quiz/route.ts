@@ -3,6 +3,10 @@ import { adminDb } from "@/lib/firebase/admin";
 import { verifyAuth } from "@/lib/firebase/auth-helpers";
 import { buildQuizRequestSchema } from "@/lib/validation/schemas";
 import { selectQuestions } from "@/lib/quiz/selection";
+import {
+  shouldAutoGenerate,
+  generateQuestionBatch,
+} from "@/lib/quiz/auto-generate";
 import type {
   Question,
   QuestionProgress,
@@ -29,35 +33,55 @@ export async function POST(req: NextRequest) {
   const userId = user.uid;
 
   try {
-    // Check for unfinished session
+    // Mark any unfinished sessions as abandoned
     const unfinishedSnap = await adminDb
       .collection(`users/${userId}/quiz_sessions`)
       .where("status", "==", "in-progress")
-      .orderBy("startedAt", "desc")
-      .limit(1)
+      .limit(5)
       .get();
 
     if (!unfinishedSnap.empty) {
-      // Mark old session as abandoned
-      const oldSession = unfinishedSnap.docs[0];
-      await oldSession.ref.update({ status: "abandoned" });
+      const abandonBatch = adminDb.batch();
+      unfinishedSnap.docs.forEach((d) =>
+        abandonBatch.update(d.ref, { status: "abandoned" })
+      );
+      await abandonBatch.commit();
     }
 
     // Fetch all questions
-    const questionsSnap = await adminDb
-      .collection("questions")
-      .where("flagged", "in", [false, null])
-      .get();
+    let questionsSnap = await adminDb.collection("questions").get();
+    let allQuestions: Question[] = questionsSnap.docs
+      .map((d) => d.data() as Question)
+      .filter((q) => !q.flagged);
 
-    const allQuestions: Question[] = questionsSnap.docs.map(
-      (d) => d.data() as Question
-    );
-
-    if (allQuestions.length === 0) {
-      return NextResponse.json(
-        { error: "No questions available. Generate a batch first." },
-        { status: 404 }
+    // ─── Auto-generate if pool is empty or 90%+ seen ────────────────
+    if (
+      allQuestions.length === 0 ||
+      (await shouldAutoGenerate(userId, allQuestions.length))
+    ) {
+      console.log(
+        `Auto-generating: pool=${allQuestions.length}, triggering batch...`
       );
+      try {
+      await generateQuestionBatch(10);
+        // Re-fetch questions after generation
+        questionsSnap = await adminDb.collection("questions").get();
+        allQuestions = questionsSnap.docs
+          .map((d) => d.data() as Question)
+          .filter((q) => !q.flagged);
+      } catch (genError) {
+        console.error("Auto-generation failed:", genError);
+        // Continue with existing pool if generation fails
+        if (allQuestions.length === 0) {
+          return NextResponse.json(
+            {
+              error:
+                "No questions available and auto-generation failed. Try again shortly.",
+            },
+            { status: 503 }
+          );
+        }
+      }
     }
 
     // Fetch user's progress

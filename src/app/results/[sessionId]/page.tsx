@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button, Card, Spinner, CategoryBadge } from "@/components/ui";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { getClientDb } from "@/lib/firebase/client";
 import type { QuizSession, QuestionCategory } from "@/types";
 import { CATEGORY_LABELS } from "@/types";
 
@@ -37,7 +37,7 @@ export default function ResultsPage({
 
     const load = async () => {
       const ref = doc(
-        db,
+        getClientDb(),
         `users/${user.uid}/quiz_sessions/${sessionId}`
       );
       const snap = await getDoc(ref);

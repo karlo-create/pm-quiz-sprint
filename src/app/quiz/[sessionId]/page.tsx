@@ -52,34 +52,26 @@ export default function QuizPage({
     }
   }, [user, authLoading, router]);
 
-  // Load quiz session data
+  // Load quiz session data from sessionStorage (set by Home page)
   useEffect(() => {
     if (!user || !sessionId) return;
 
-    const load = async () => {
+    const stored = sessionStorage.getItem(`quiz-${sessionId}`);
+    if (stored) {
       try {
-        // For existing sessions, rebuild from stored data
-        // For simplicity, we re-fetch by starting a new session or reading stored questions
-        // In a full implementation, you'd read the session doc directly
-        // Here we use the session as-is since the Home page already created it
-        const data = await apiFetch<QuizData>(
-          "/api/build-quiz",
-          {
-            method: "POST",
-            body: JSON.stringify({ mode: "quick-5" }),
-          }
-        );
+        const data = JSON.parse(stored) as QuizData;
         setQuestions(data.questions);
         setIsLoading(false);
         setQuestionStartTime(Date.now());
+        return;
       } catch {
-        // If we can't load, go home
-        router.replace("/");
+        // fall through
       }
-    };
+    }
 
-    load();
-  }, [user, sessionId, apiFetch, router]);
+    // No stored data — redirect home to start a fresh quiz
+    router.replace("/");
+  }, [user, sessionId, router]);
 
   const currentQuestion = questions[currentIndex] || null;
   const totalQuestions = questions.length;

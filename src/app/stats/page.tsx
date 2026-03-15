@@ -10,7 +10,7 @@ import {
   doc,
   getDoc,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { getClientDb } from "@/lib/firebase/client";
 import type {
   UserProfile,
   QuestionProgress,
@@ -63,14 +63,14 @@ export default function StatsPage() {
 
     const load = async () => {
       // Load profile
-      const profileSnap = await getDoc(doc(db, "users", user.uid));
+      const profileSnap = await getDoc(doc(getClientDb(), "users", user.uid));
       if (profileSnap.exists()) {
         setProfile(profileSnap.data() as UserProfile);
       }
 
       // Load all progress records
       const progressSnap = await getDocs(
-        collection(db, `users/${user.uid}/question_progress`)
+        collection(getClientDb(), `users/${user.uid}/question_progress`)
       );
 
       const progressList = progressSnap.docs.map(

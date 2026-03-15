@@ -13,7 +13,7 @@ import {
 import type { PoolStatus, QuestionBatch } from "@/types";
 import { CATEGORY_LABELS } from "@/types";
 import { collection, getDocs, orderBy, query, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { getClientDb } from "@/lib/firebase/client";
 
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
@@ -44,7 +44,7 @@ export default function AdminPage() {
 
       // Load recent batches from client-side Firestore
       const batchQuery = query(
-        collection(db, "question_batches"),
+        collection(getClientDb(), "question_batches"),
         orderBy("createdAt", "desc"),
         limit(10)
       );
