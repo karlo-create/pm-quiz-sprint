@@ -3,10 +3,6 @@ import { adminDb } from "@/lib/firebase/admin";
 import { verifyAuth } from "@/lib/firebase/auth-helpers";
 import { buildQuizRequestSchema } from "@/lib/validation/schemas";
 import { selectQuestions } from "@/lib/quiz/selection";
-import {
-  shouldAutoGenerate,
-  generateQuestionBatch,
-} from "@/lib/quiz/auto-generate";
 import type {
   Question,
   QuestionProgress,
@@ -48,40 +44,17 @@ export async function POST(req: NextRequest) {
       await abandonBatch.commit();
     }
 
-    // Fetch all questions
-    let questionsSnap = await adminDb.collection("questions").get();
-    let allQuestions: Question[] = questionsSnap.docs
+    // Fetch all questions from pool
+    const questionsSnap = await adminDb.collection("questions").get();
+    const allQuestions: Question[] = questionsSnap.docs
       .map((d) => d.data() as Question)
       .filter((q) => !q.flagged);
 
-    // ─── Auto-generate if pool is empty or 90%+ seen ────────────────
-    if (
-      allQuestions.length === 0 ||
-      (await shouldAutoGenerate(userId, allQuestions.length))
-    ) {
-      console.log(
-        `Auto-generating: pool=${allQuestions.length}, triggering batch...`
+    if (allQuestions.length === 0) {
+      return NextResponse.json(
+        { error: "No questions available. Generate questions from the Admin panel first." },
+        { status: 404 }
       );
-      try {
-      await generateQuestionBatch(10);
-        // Re-fetch questions after generation
-        questionsSnap = await adminDb.collection("questions").get();
-        allQuestions = questionsSnap.docs
-          .map((d) => d.data() as Question)
-          .filter((q) => !q.flagged);
-      } catch (genError) {
-        console.error("Auto-generation failed:", genError);
-        // Continue with existing pool if generation fails
-        if (allQuestions.length === 0) {
-          return NextResponse.json(
-            {
-              error:
-                "No questions available and auto-generation failed. Try again shortly.",
-            },
-            { status: 503 }
-          );
-        }
-      }
     }
 
     // Fetch user's progress

@@ -72,7 +72,7 @@ export default function AdminPage() {
         duplicates: number;
       }>("/api/generate-batch", {
         method: "POST",
-        body: JSON.stringify({ count: 50 }),
+        body: JSON.stringify({ count: 100 }),
       });
       setLastResult(
         `Batch ${result.batchId.slice(0, 8)}... — ${result.accepted} accepted, ${result.rejected} rejected, ${result.duplicates} duplicates`
@@ -165,7 +165,7 @@ export default function AdminPage() {
           disabled={isGenerating || isRefreshing}
           onClick={handleGenerateBatch}
         >
-          Generate 50 Questions
+          Generate 100 Questions
         </Button>
 
         <Button
