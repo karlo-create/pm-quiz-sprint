@@ -16,6 +16,8 @@ export function useApi() {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
+          "X-User-Timezone":
+            Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...options.headers,
         },
       });

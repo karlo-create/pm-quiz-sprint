@@ -4,13 +4,12 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useApi } from "@/hooks/useApi";
-import { Button, StatCard, Spinner } from "@/components/ui";
-import type { QuizMode, UserProfile } from "@/types";
+import { Button, StatCard, Spinner, Card, ProgressBar } from "@/components/ui";
+import type { QuizMode, UserProfile, QuestionProgress } from "@/types";
 import {
   collection,
   query,
   where,
-  orderBy,
   limit,
   getDocs,
   doc,
@@ -18,6 +17,8 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
+
+const DAILY_GOAL_TARGET = 10;
 
 export default function HomePage() {
   const { user, loading } = useAuth();
@@ -28,6 +29,7 @@ export default function HomePage() {
   const [unfinishedSession, setUnfinishedSession] = useState<string | null>(
     null
   );
+  const [cardsDue, setCardsDue] = useState<number>(0);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -35,7 +37,7 @@ export default function HomePage() {
     }
   }, [user, loading, router]);
 
-  // Load user profile and check for unfinished sessions
+  // Load user profile, check for unfinished sessions, and count cards due
   useEffect(() => {
     if (!user) return;
 
@@ -72,6 +74,7 @@ export default function HomePage() {
         setProfile(newProfile);
       }
 
+      // Check for unfinished sessions
       try {
         const sessionsRef = collection(
           getClientDb(),
@@ -89,6 +92,26 @@ export default function HomePage() {
       } catch {
         // Ignore — no unfinished session or index not ready
       }
+
+      // Count cards due for review (spaced repetition)
+      try {
+        const progressRef = collection(
+          getClientDb(),
+          `users/${user.uid}/question_progress`
+        );
+        const progressSnap = await getDocs(progressRef);
+        const now = new Date().toISOString();
+        let dueCount = 0;
+        progressSnap.docs.forEach((d) => {
+          const p = d.data() as QuestionProgress;
+          if (p.nextEligibleAt && p.nextEligibleAt <= now) {
+            dueCount++;
+          }
+        });
+        setCardsDue(dueCount);
+      } catch {
+        // Ignore — progress collection may not exist yet
+      }
     };
 
     loadData().catch(console.error);
@@ -97,11 +120,13 @@ export default function HomePage() {
   const handleStartQuiz = async (mode: QuizMode) => {
     setStartingQuiz(mode);
     try {
-      const data = await apiFetch<{ sessionId: string; questions: unknown[] }>("/api/build-quiz", {
-        method: "POST",
-        body: JSON.stringify({ mode }),
-      });
-      // Store quiz data so the quiz page doesn't need another API call
+      const data = await apiFetch<{ sessionId: string; questions: unknown[] }>(
+        "/api/build-quiz",
+        {
+          method: "POST",
+          body: JSON.stringify({ mode }),
+        }
+      );
       sessionStorage.setItem(
         `quiz-${data.sessionId}`,
         JSON.stringify(data)
@@ -129,8 +154,16 @@ export default function HomePage() {
   const streak = profile?.currentStreak ?? 0;
   const firstName = profile?.displayName?.split(" ")[0] ?? "";
 
+  // Daily goal: check if date matches today in user's local tz
+  const todayLocal = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+  const dailyProgress =
+    profile?.dailyGoalDate === todayLocal
+      ? profile.dailyGoalProgress ?? 0
+      : 0;
+  const dailyGoalMet = dailyProgress >= DAILY_GOAL_TARGET;
+
   return (
-    <div className="animate-fade-in space-y-6 px-4 pt-6">
+    <div className="animate-fade-in space-y-6 px-4 pt-6 pb-8">
       {/* Greeting */}
       <div>
         <h1 className="text-2xl font-bold">
@@ -164,6 +197,56 @@ export default function HomePage() {
           sub="done"
         />
       </div>
+
+      {/* Daily goal progress */}
+      <Card>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">
+              {dailyGoalMet ? "🎉 Daily Goal Complete!" : "📊 Daily Goal"}
+            </span>
+            <span className="text-sm text-text-secondary">
+              {Math.min(dailyProgress, DAILY_GOAL_TARGET)}/{DAILY_GOAL_TARGET}{" "}
+              questions
+            </span>
+          </div>
+          <ProgressBar
+            current={Math.min(dailyProgress, DAILY_GOAL_TARGET)}
+            total={DAILY_GOAL_TARGET}
+            colorClass={dailyGoalMet ? "bg-success" : "bg-primary"}
+          />
+          {dailyGoalMet && (
+            <p className="text-xs text-success font-medium text-center">
+              Great job! You hit your daily target!
+            </p>
+          )}
+        </div>
+      </Card>
+
+      {/* Cards due for review */}
+      {cardsDue > 0 && (
+        <Card className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📋</span>
+            <div>
+              <p className="text-sm font-medium">
+                {cardsDue} question{cardsDue !== 1 ? "s" : ""} due for review
+              </p>
+              <p className="text-xs text-text-secondary">
+                Based on your spaced repetition schedule
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => handleStartQuiz("weak-spots")}
+            disabled={!!startingQuiz}
+          >
+            Review
+          </Button>
+        </Card>
+      )}
 
       {/* Resume unfinished session */}
       {unfinishedSession && (

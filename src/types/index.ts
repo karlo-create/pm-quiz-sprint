@@ -71,7 +71,19 @@ export interface UserProfile {
   totalCorrect: number;
   currentStreak: number;
   longestStreak: number;
-  lastQuizDate: string | null;
+  lastQuizDate: string | null; // YYYY-MM-DD in user's local timezone
+  // Streak freeze: 1 free freeze per week
+  streakFreezeUsedAt: string | null; // ISO date when freeze was last used
+  streakFreezeWeekStart: string | null; // ISO date of the week the freeze belongs to
+  // Daily goal tracking
+  dailyGoalProgress: number; // questions answered today
+  dailyGoalDate: string | null; // YYYY-MM-DD in user's local timezone
+  dailyGoalCompleted: boolean; // whether today's goal was met
+  // Timezone
+  timezone: string | null; // IANA timezone string e.g. "Europe/Zagreb"
+  // Achievement badges
+  badges: string[]; // array of earned badge IDs
+  badgesLastCheckedAt: string | null;
 }
 
 // ─── Firestore: users/{userId}/question_progress/{questionId} ──────────────
@@ -177,6 +189,10 @@ export interface SubmitAnswerResponse {
     totalQuestions: number;
     score: number;
   };
+  dailyGoalProgress?: number;
+  dailyGoalTarget?: number;
+  dailyGoalJustCompleted?: boolean;
+  newBadges?: string[];
 }
 
 export interface GenerateBatchRequest {

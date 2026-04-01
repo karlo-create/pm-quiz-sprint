@@ -11,6 +11,7 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
+import { BADGE_DEFINITIONS } from "@/lib/quiz/achievements";
 import type {
   UserProfile,
   QuestionProgress,
@@ -176,8 +177,37 @@ export default function StatsPage() {
         </Card>
       </div>
 
-      {/* Category coverage */}
+      {/* Achievement badges */}
       <div>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">
+          Achievements
+        </h2>
+        <div className="grid grid-cols-2 gap-3">
+          {BADGE_DEFINITIONS.map((badge) => {
+            const earned = (profile?.badges || []).includes(badge.id);
+            return (
+              <Card
+                key={badge.id}
+                className={`text-center py-3 ${earned ? "" : "opacity-40"}`}
+              >
+                <p className="text-2xl">{badge.icon}</p>
+                <p className="text-xs font-semibold mt-1">{badge.name}</p>
+                <p className="text-xs text-text-secondary mt-0.5">
+                  {badge.description}
+                </p>
+                {earned && (
+                  <span className="inline-block mt-1 text-xs text-success font-medium">
+                    Earned ✓
+                  </span>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Category coverage */}
+      <div className="pb-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">
           Categories
         </h2>

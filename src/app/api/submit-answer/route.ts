@@ -6,14 +6,19 @@ import {
   updateProgress,
   createFreshProgress,
 } from "@/lib/quiz/spaced-repetition";
+import { computeStreakUpdate, getLocalDateString } from "@/lib/quiz/streaks";
+import { checkAndAwardBadges } from "@/lib/quiz/achievements";
 import type {
   Question,
   QuestionProgress,
   QuizSession,
   Attempt,
   SubmitAnswerResponse,
+  UserProfile,
 } from "@/types";
 import { FieldValue } from "firebase-admin/firestore";
+
+const DAILY_GOAL_TARGET = 10;
 
 export async function POST(req: NextRequest) {
   const user = await verifyAuth(req);
@@ -32,6 +37,10 @@ export async function POST(req: NextRequest) {
 
   const { sessionId, questionId, selectedOption, timeSpentMs } = parsed.data;
   const userId = user.uid;
+
+  // Get user's timezone from request header (sent by client)
+  const timezone =
+    req.headers.get("x-user-timezone") || "UTC";
 
   try {
     // Fetch session
@@ -80,6 +89,11 @@ export async function POST(req: NextRequest) {
     const question = questionSnap.data() as Question;
     const isCorrect = selectedOption === question.correctOption;
     const now = new Date().toISOString();
+
+    // Fetch user profile for streak/goal/badge updates
+    const userRef = adminDb.doc(`users/${userId}`);
+    const userSnap = await userRef.get();
+    const profile = userSnap.data() as UserProfile;
 
     // Save attempt
     const attemptRef = adminDb.collection(`users/${userId}/attempts`).doc();
@@ -146,6 +160,26 @@ export async function POST(req: NextRequest) {
       questionUpdate.globalTimesWrong = FieldValue.increment(1);
     }
 
+    // --- Daily goal tracking ---
+    const todayLocal = getLocalDateString(timezone);
+    let dailyGoalProgress = profile.dailyGoalProgress || 0;
+    let dailyGoalDate = profile.dailyGoalDate || null;
+    let dailyGoalCompleted = profile.dailyGoalCompleted || false;
+
+    // Reset if it's a new day
+    if (dailyGoalDate !== todayLocal) {
+      dailyGoalProgress = 0;
+      dailyGoalDate = todayLocal;
+      dailyGoalCompleted = false;
+    }
+
+    dailyGoalProgress += 1;
+    const justCompletedDailyGoal =
+      !dailyGoalCompleted && dailyGoalProgress >= DAILY_GOAL_TARGET;
+    if (justCompletedDailyGoal) {
+      dailyGoalCompleted = true;
+    }
+
     // Batch write
     const batch = adminDb.batch();
     batch.set(attemptRef, attempt);
@@ -153,20 +187,60 @@ export async function POST(req: NextRequest) {
     batch.set(progressRef, updatedProgress);
     batch.update(questionSnap.ref, questionUpdate);
 
-    // Update user profile stats
-    const userRef = adminDb.doc(`users/${userId}`);
-    batch.update(userRef, {
+    // Build user profile update
+    const userUpdate: Record<string, unknown> = {
       totalQuestions: FieldValue.increment(1),
       totalCorrect: FieldValue.increment(isCorrect ? 1 : 0),
       lastActiveAt: now,
-    });
+      timezone,
+      dailyGoalProgress,
+      dailyGoalDate,
+      dailyGoalCompleted,
+    };
+
+    // --- Streak update (on quiz completion only) ---
+    let newBadges: string[] = [];
 
     if (isComplete) {
-      batch.update(userRef, {
-        totalQuizzes: FieldValue.increment(1),
-        lastQuizDate: now.split("T")[0],
-      });
+      userUpdate.totalQuizzes = FieldValue.increment(1);
+
+      const streakResult = computeStreakUpdate(
+        profile.currentStreak || 0,
+        profile.longestStreak || 0,
+        profile.lastQuizDate,
+        profile.streakFreezeUsedAt || null,
+        profile.streakFreezeWeekStart || null,
+        timezone
+      );
+      userUpdate.currentStreak = streakResult.currentStreak;
+      userUpdate.longestStreak = streakResult.longestStreak;
+      userUpdate.lastQuizDate = streakResult.lastQuizDate;
+      userUpdate.streakFreezeUsedAt = streakResult.streakFreezeUsedAt;
+      userUpdate.streakFreezeWeekStart = streakResult.streakFreezeWeekStart;
+
+      // --- Badge check (on quiz completion) ---
+      // Build a simulated "after" profile for badge checking
+      const simulatedProfile: UserProfile = {
+        ...profile,
+        totalQuestions: (profile.totalQuestions || 0) + 1,
+        totalCorrect: (profile.totalCorrect || 0) + (isCorrect ? 1 : 0),
+        totalQuizzes: (profile.totalQuizzes || 0) + 1,
+        currentStreak: streakResult.currentStreak,
+        longestStreak: streakResult.longestStreak,
+        badges: profile.badges || [],
+      };
+
+      // We pass an empty progressList here — category mastery checks
+      // use profile-level stats, not individual progress records
+      newBadges = checkAndAwardBadges(simulatedProfile, [], true);
+
+      if (newBadges.length > 0) {
+        userUpdate.badges = [...(profile.badges || []), ...newBadges];
+        userUpdate.badgesLastCheckedAt = now;
+      }
     }
+
+    batch.update(userRef, userUpdate);
 
     await batch.commit();
 
@@ -179,6 +253,10 @@ export async function POST(req: NextRequest) {
         totalQuestions: session.totalQuestions,
         score: newScore,
       },
+      dailyGoalProgress,
+      dailyGoalTarget: DAILY_GOAL_TARGET,
+      dailyGoalJustCompleted: justCompletedDailyGoal,
+      newBadges,
     };
 
     return NextResponse.json(response);

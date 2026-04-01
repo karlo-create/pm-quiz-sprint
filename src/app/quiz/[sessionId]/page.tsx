@@ -12,6 +12,7 @@ import {
   DifficultyBadge,
   Card,
 } from "@/components/ui";
+import { BADGE_DEFINITIONS } from "@/lib/quiz/achievements";
 import type {
   QuizQuestionPayload,
   AnswerOption,
@@ -220,6 +221,36 @@ export default function QuizPage({
               {feedback.explanation}
             </p>
           </Card>
+
+          {/* Daily goal completion toast */}
+          {feedback.dailyGoalJustCompleted && (
+            <Card className="border-2 border-success bg-success/5 text-center animate-pop-in">
+              <p className="text-lg font-bold text-success">🎉 Daily Goal Complete!</p>
+              <p className="text-sm text-text-secondary">
+                You answered {feedback.dailyGoalTarget} questions today!
+              </p>
+            </Card>
+          )}
+
+          {/* New badge earned toast */}
+          {feedback.newBadges && feedback.newBadges.length > 0 && (
+            <div className="space-y-2">
+              {feedback.newBadges.map((badgeId) => {
+                const badge = BADGE_DEFINITIONS.find((b) => b.id === badgeId);
+                if (!badge) return null;
+                return (
+                  <Card
+                    key={badgeId}
+                    className="border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/30 text-center animate-pop-in"
+                  >
+                    <p className="text-2xl">{badge.icon}</p>
+                    <p className="text-sm font-bold mt-1">Badge Earned!</p>
+                    <p className="text-sm text-text-secondary">{badge.name}</p>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
 
           <Button size="lg" onClick={handleNext}>
             {currentIndex + 1 >= totalQuestions ? "See Results →" : "Next →"}
