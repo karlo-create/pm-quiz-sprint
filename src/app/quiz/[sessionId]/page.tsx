@@ -45,6 +45,8 @@ export default function QuizPage({
   );
   const [feedback, setFeedback] = useState<SubmitAnswerResponse | null>(null);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
+  // Used to re-trigger stagger animation on each new question
+  const [questionKey, setQuestionKey] = useState(0);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -52,7 +54,6 @@ export default function QuizPage({
     }
   }, [user, authLoading, router]);
 
-  // Load quiz session data from sessionStorage (set by Home page)
   useEffect(() => {
     if (!user || !sessionId) return;
 
@@ -69,13 +70,11 @@ export default function QuizPage({
       }
     }
 
-    // No stored data — redirect home to start a fresh quiz
     router.replace("/");
   }, [user, sessionId, router]);
 
   const currentQuestion = questions[currentIndex] || null;
   const totalQuestions = questions.length;
-  const isComplete = currentIndex >= totalQuestions && totalQuestions > 0;
 
   const handleSelectAnswer = async (option: AnswerOption) => {
     if (isSubmitting || feedback) return;
@@ -114,6 +113,7 @@ export default function QuizPage({
     setSelectedOption(null);
     setFeedback(null);
     setQuestionStartTime(Date.now());
+    setQuestionKey((k) => k + 1);
   };
 
   if (authLoading || isLoading) {
@@ -135,33 +135,33 @@ export default function QuizPage({
   return (
     <div className="quiz-active flex min-h-screen flex-col px-4 pt-4">
       {/* Progress header */}
-      <div className="mb-4 space-y-2">
+      <div className="mb-5 space-y-2">
         <div className="flex items-center justify-between text-sm text-text-secondary">
-          <span>
-            {currentIndex + 1} / {totalQuestions}
+          <span className="font-medium">
+            {currentIndex + 1} <span className="text-border">/ {totalQuestions}</span>
           </span>
-          <span>
+          <span className="font-medium">
             {score} correct
           </span>
         </div>
-        <ProgressBar current={currentIndex} total={totalQuestions} />
+        <ProgressBar current={currentIndex + 1} total={totalQuestions} />
       </div>
 
       {/* Category & difficulty badges */}
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-2 animate-fade-in" key={`badges-${questionKey}`}>
         <CategoryBadge category={currentQuestion.category} />
         <DifficultyBadge difficulty={currentQuestion.difficulty} />
       </div>
 
       {/* Question text */}
-      <div className="mb-6">
+      <div className="mb-6 animate-slide-up" key={`question-${questionKey}`}>
         <h2 className="text-lg font-semibold leading-snug">
           {currentQuestion.questionText}
         </h2>
       </div>
 
       {/* Answer buttons */}
-      <div className="flex-1 space-y-3">
+      <div className="flex-1 space-y-3" key={`options-${questionKey}`}>
         {currentQuestion.options.map((optionText, idx) => {
           const option = OPTION_LABELS[idx];
           const isSelected = selectedOption === option;
@@ -170,17 +170,15 @@ export default function QuizPage({
           const isWrong = showFeedback && isSelected && !feedback?.isCorrect;
 
           let buttonClass =
-            "w-full text-left rounded-xl border-2 p-4 transition-all tap-target ";
+            `w-full text-left rounded-xl border-2 p-4 transition-all tap-target animate-option-${idx} `;
 
           if (showFeedback) {
             if (isCorrect) {
-              buttonClass +=
-                "border-success bg-success/10 text-success font-semibold";
+              buttonClass += "border-success bg-success/10 text-success font-semibold animate-correct";
             } else if (isWrong) {
-              buttonClass +=
-                "border-error bg-error/10 text-error font-semibold";
+              buttonClass += "border-error bg-error/10 text-error font-semibold animate-wrong";
             } else {
-              buttonClass += "border-border opacity-50";
+              buttonClass += "border-border opacity-40";
             }
           } else if (isSelected) {
             buttonClass += "border-primary bg-primary/10";
@@ -196,7 +194,7 @@ export default function QuizPage({
               onClick={() => handleSelectAnswer(option)}
               disabled={isSubmitting || showFeedback}
             >
-              <span className="mr-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-surface text-sm font-bold">
+              <span className="mr-3 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-background border border-border text-sm font-bold">
                 {option}
               </span>
               {optionText}
@@ -207,7 +205,7 @@ export default function QuizPage({
 
       {/* Feedback section */}
       {feedback && (
-        <div className="mt-4 space-y-3 pb-4">
+        <div className="mt-4 space-y-3 pb-4 animate-slide-up">
           <Card
             className={`border-2 ${
               feedback.isCorrect
@@ -215,7 +213,7 @@ export default function QuizPage({
                 : "border-error bg-error/5"
             }`}
           >
-            <p className="mb-1 text-sm font-bold">
+            <p className={`mb-1 text-sm font-bold ${feedback.isCorrect ? "text-success" : "text-error"}`}>
               {feedback.isCorrect ? "✓ Correct!" : "✗ Incorrect"}
             </p>
             <p className="text-sm leading-relaxed text-text-secondary">
@@ -223,11 +221,8 @@ export default function QuizPage({
             </p>
           </Card>
 
-          <Button
-            size="lg"
-            onClick={handleNext}
-          >
-            {currentIndex + 1 >= totalQuestions ? "See Results" : "Next →"}
+          <Button size="lg" onClick={handleNext}>
+            {currentIndex + 1 >= totalQuestions ? "See Results →" : "Next →"}
           </Button>
         </div>
       )}

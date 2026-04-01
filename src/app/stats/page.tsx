@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Card, StatCard, Spinner, CategoryBadge } from "@/components/ui";
+import { Card, StatCard, Spinner } from "@/components/ui";
 import {
   collection,
   getDocs,
@@ -25,12 +25,12 @@ const ALL_CATEGORIES: QuestionCategory[] = [
   "ux-ui",
 ];
 
-interface CategoryStat {
-  category: QuestionCategory;
-  seen: number;
-  correct: number;
-  accuracy: number;
-}
+const CATEGORY_ICONS: Record<QuestionCategory, string> = {
+  "product-management": "📦",
+  "ai-pm": "🤖",
+  "tech-basics": "⚙️",
+  "ux-ui": "🎨",
+};
 
 interface StatusCounts {
   new: number;
@@ -43,7 +43,6 @@ export default function StatsPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [categoryStats, setCategoryStats] = useState<CategoryStat[]>([]);
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({
     new: 0,
     learning: 0,
@@ -62,13 +61,11 @@ export default function StatsPage() {
     if (!user) return;
 
     const load = async () => {
-      // Load profile
       const profileSnap = await getDoc(doc(getClientDb(), "users", user.uid));
       if (profileSnap.exists()) {
         setProfile(profileSnap.data() as UserProfile);
       }
 
-      // Load all progress records
       const progressSnap = await getDocs(
         collection(getClientDb(), `users/${user.uid}/question_progress`)
       );
@@ -77,7 +74,6 @@ export default function StatsPage() {
         (d) => d.data() as QuestionProgress
       );
 
-      // Status counts
       const counts: StatusCounts = {
         new: 0,
         learning: 0,
@@ -88,36 +84,6 @@ export default function StatsPage() {
         counts[p.status]++;
       });
       setStatusCounts(counts);
-
-      // Category stats (needs question data to map questionId → category)
-      // For now, aggregate from progress records
-      const catMap = new Map<
-        QuestionCategory,
-        { seen: number; correct: number }
-      >();
-
-      ALL_CATEGORIES.forEach((cat) => {
-        catMap.set(cat, { seen: 0, correct: 0 });
-      });
-
-      // We'll aggregate all progress regardless of category for the overview
-      const totalSeen = progressList.reduce(
-        (acc, p) => acc + p.timesSeen,
-        0
-      );
-      const totalCorrect = progressList.reduce(
-        (acc, p) => acc + p.timesCorrect,
-        0
-      );
-
-      setCategoryStats(
-        ALL_CATEGORIES.map((cat) => ({
-          category: cat,
-          seen: 0, // Would need question lookup to properly categorize
-          correct: 0,
-          accuracy: 0,
-        }))
-      );
 
       setIsLoading(false);
     };
@@ -145,7 +111,7 @@ export default function StatsPage() {
     statusCounts["needs-review"];
 
   return (
-    <div className="space-y-6 px-4 pt-6">
+    <div className="animate-fade-in space-y-6 px-4 pt-6">
       <h1 className="text-2xl font-bold">Stats</h1>
 
       {/* Overview */}
@@ -155,61 +121,71 @@ export default function StatsPage() {
           label="Total Questions"
           value={profile?.totalQuestions ?? 0}
         />
-        <StatCard label="Overall Accuracy" value={`${accuracy}%`} />
+        <StatCard label="Overall Accuracy" value={`${accuracy}%`} accent="accuracy" />
         <StatCard
           label="Current Streak"
           value={profile?.currentStreak ?? 0}
           sub="days"
+          icon={(profile?.currentStreak ?? 0) > 0 ? "🔥" : undefined}
+          accent={(profile?.currentStreak ?? 0) > 0 ? "streak" : "default"}
         />
       </div>
 
-      {/* Question status breakdown */}
+      {/* Question mastery breakdown */}
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-secondary">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">
           Question Mastery
         </h2>
         <Card>
-          <div className="space-y-3">
-            <StatusRow
-              label="New"
-              count={statusCounts.new}
-              total={totalProgress}
-              color="bg-blue-500"
-            />
-            <StatusRow
-              label="Learning"
-              count={statusCounts.learning}
-              total={totalProgress}
-              color="bg-amber-500"
-            />
-            <StatusRow
-              label="Solid"
-              count={statusCounts.solid}
-              total={totalProgress}
-              color="bg-emerald-500"
-            />
-            <StatusRow
-              label="Needs Review"
-              count={statusCounts["needs-review"]}
-              total={totalProgress}
-              color="bg-red-500"
-            />
-          </div>
+          {totalProgress === 0 ? (
+            <p className="text-center text-sm text-text-secondary py-2">
+              Complete some quizzes to see your mastery progress.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <StatusRow
+                label="New"
+                count={statusCounts.new}
+                total={totalProgress}
+                color="bg-blue-500"
+                dot="bg-blue-500"
+              />
+              <StatusRow
+                label="Learning"
+                count={statusCounts.learning}
+                total={totalProgress}
+                color="bg-amber-500"
+                dot="bg-amber-500"
+              />
+              <StatusRow
+                label="Solid"
+                count={statusCounts.solid}
+                total={totalProgress}
+                color="bg-emerald-500"
+                dot="bg-emerald-500"
+              />
+              <StatusRow
+                label="Needs Review"
+                count={statusCounts["needs-review"]}
+                total={totalProgress}
+                color="bg-red-500"
+                dot="bg-red-500"
+              />
+            </div>
+          )}
         </Card>
       </div>
 
       {/* Category coverage */}
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-text-secondary">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">
           Categories
         </h2>
         <div className="space-y-2">
           {ALL_CATEGORIES.map((cat) => (
-            <Card key={cat} className="flex items-center justify-between">
-              <CategoryBadge category={cat} />
-              <span className="text-sm text-text-secondary">
-                {CATEGORY_LABELS[cat]}
-              </span>
+            <Card key={cat} className="flex items-center gap-3 py-3">
+              <span className="text-xl">{CATEGORY_ICONS[cat]}</span>
+              <span className="text-sm font-medium">{CATEGORY_LABELS[cat]}</span>
             </Card>
           ))}
         </div>
@@ -223,22 +199,27 @@ function StatusRow({
   count,
   total,
   color,
+  dot,
 }: {
   label: string;
   count: number;
   total: number;
   color: string;
+  dot: string;
 }) {
   const pct = total > 0 ? (count / total) * 100 : 0;
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-sm">
-        <span>{label}</span>
-        <span className="text-text-secondary">{count}</span>
+        <div className="flex items-center gap-2">
+          <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
+          <span>{label}</span>
+        </div>
+        <span className="text-text-secondary font-medium">{count}</span>
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-surface">
+      <div className="h-2 w-full overflow-hidden rounded-full bg-border">
         <div
-          className={`h-full rounded-full ${color} transition-all`}
+          className={`h-full rounded-full ${color} transition-all duration-500`}
           style={{ width: `${pct}%` }}
         />
       </div>

@@ -3,17 +3,12 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Button, Card, Spinner, CategoryBadge } from "@/components/ui";
+import { Button, Card, Spinner, ScoreRing } from "@/components/ui";
 import { doc, getDoc } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
-import type { QuizSession, QuestionCategory } from "@/types";
-import { CATEGORY_LABELS } from "@/types";
+import type { QuizSession, Question, AnswerOption } from "@/types";
 
-interface CategoryResult {
-  category: QuestionCategory;
-  total: number;
-  correct: number;
-}
+const OPTION_LABELS: AnswerOption[] = ["A", "B", "C", "D"];
 
 export default function ResultsPage({
   params,
@@ -24,6 +19,7 @@ export default function ResultsPage({
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [session, setSession] = useState<QuizSession | null>(null);
+  const [questions, setQuestions] = useState<Record<string, Question>>({});
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -42,7 +38,21 @@ export default function ResultsPage({
       );
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        setSession(snap.data() as QuizSession);
+        const sess = snap.data() as QuizSession;
+        setSession(sess);
+
+        // Fetch full question data for review
+        const questionIds = Object.keys(sess.answers);
+        const questionMap: Record<string, Question> = {};
+        await Promise.all(
+          questionIds.map(async (qId) => {
+            const qSnap = await getDoc(doc(getClientDb(), "questions", qId));
+            if (qSnap.exists()) {
+              questionMap[qId] = qSnap.data() as Question;
+            }
+          })
+        );
+        setQuestions(questionMap);
       }
       setIsLoading(false);
     };
@@ -72,8 +82,6 @@ export default function ResultsPage({
   const answers = Object.values(session.answers);
   const wrongAnswers = answers.filter((a) => !a.isCorrect);
 
-  // Compute per-category accuracy (we don't have category on answers,
-  // so we show overall score for now)
   const emoji =
     percentage >= 80
       ? "🎉"
@@ -83,105 +91,109 @@ export default function ResultsPage({
           ? "📚"
           : "💪";
 
+  const resultLabel =
+    percentage >= 80
+      ? "Excellent work!"
+      : percentage >= 60
+        ? "Good job!"
+        : percentage >= 40
+          ? "Keep studying!"
+          : "Keep pushing!";
+
   return (
-    <div className="space-y-6 px-4 pt-8">
+    <div className="animate-fade-in space-y-6 px-4 pt-8 pb-8">
       {/* Score hero */}
-      <div className="text-center">
+      <div className="text-center animate-pop-in">
         <p className="text-5xl">{emoji}</p>
         <h1 className="mt-2 text-4xl font-bold">
           {session.score}/{session.totalQuestions}
         </h1>
-        <p className="mt-1 text-lg text-text-secondary">{percentage}% correct</p>
+        <p className="mt-1 text-base text-text-secondary">{resultLabel}</p>
       </div>
 
-      {/* Score ring visual */}
+      {/* Score ring */}
       <div className="flex justify-center">
-        <div className="relative h-32 w-32">
-          <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36">
-            <path
-              className="text-surface"
-              stroke="currentColor"
-              strokeWidth="3"
-              fill="none"
-              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-            />
-            <path
-              className={
-                percentage >= 70
-                  ? "text-success"
-                  : percentage >= 40
-                    ? "text-warning"
-                    : "text-error"
-              }
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeDasharray={`${percentage}, 100`}
-              strokeLinecap="round"
-              fill="none"
-              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-            />
-          </svg>
-        </div>
+        <ScoreRing percentage={percentage} />
       </div>
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 gap-3">
-        <Card>
+        <Card className="text-center py-3">
           <p className="text-xs text-text-secondary">Correct</p>
-          <p className="text-xl font-bold text-success">{session.score}</p>
+          <p className="text-2xl font-bold text-success">{session.score}</p>
         </Card>
-        <Card>
+        <Card className="text-center py-3">
           <p className="text-xs text-text-secondary">Incorrect</p>
-          <p className="text-xl font-bold text-error">
+          <p className="text-2xl font-bold text-error">
             {session.totalQuestions - session.score}
           </p>
         </Card>
       </div>
 
-      {/* Wrong answers to review */}
-      {wrongAnswers.length > 0 && (
-        <div>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-text-secondary">
-            Questions to Review
-          </h2>
-          <div className="space-y-2">
-            {wrongAnswers.map((a) => (
-              <Card key={a.questionId} className="text-sm">
-                <p className="text-text-secondary">
-                  Q: {a.questionId.slice(0, 8)}...
+      {/* Full question review */}
+      <div className="animate-slide-up">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-secondary">
+          Question Review ({answers.length})
+        </h2>
+        <div className="space-y-3">
+          {answers.map((a, idx) => {
+            const q = questions[a.questionId];
+            if (!q) return null;
+            return (
+              <Card
+                key={a.questionId}
+                className={`text-sm space-y-2 border-l-4 ${a.isCorrect ? "border-l-success/50" : "border-l-error/50"}`}
+              >
+                <p className="font-medium">
+                  {idx + 1}. {q.questionText}
                 </p>
-                <p>
-                  Your answer:{" "}
-                  <span className="font-semibold text-error">
-                    {a.selectedOption}
-                  </span>
-                </p>
+                <div className="space-y-1 pl-2">
+                  {q.options.map((opt, i) => {
+                    const label = OPTION_LABELS[i];
+                    const isUserAnswer = label === a.selectedOption;
+                    const isCorrectAnswer = label === q.correctOption;
+                    let optClass = "text-text-secondary";
+                    if (isCorrectAnswer)
+                      optClass = "text-success font-semibold";
+                    if (isUserAnswer && !a.isCorrect)
+                      optClass = "text-error font-semibold line-through";
+                    if (isUserAnswer && a.isCorrect)
+                      optClass = "text-success font-semibold";
+                    return (
+                      <p key={label} className={optClass}>
+                        {label}. {opt}
+                        {isUserAnswer && !isCorrectAnswer && " ← your answer"}
+                        {isCorrectAnswer && " ✓"}
+                      </p>
+                    );
+                  })}
+                </div>
+                {q.explanation && (
+                  <p className="text-xs text-text-secondary border-t border-border pt-2">
+                    <span className="font-semibold">Why:</span>{" "}
+                    {q.explanation}
+                  </p>
+                )}
               </Card>
-            ))}
-          </div>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {/* Actions */}
-      <div className="space-y-3 pb-6">
+      <div className="space-y-3">
         {wrongAnswers.length > 0 && (
           <Button
             size="lg"
             variant="danger"
-            onClick={() => {
-              router.push("/");
-              // Home page will offer weak spots mode
-            }}
+            onClick={() => router.push("/")}
           >
             🎯 Retry Weak Spots
           </Button>
         )}
 
-        <Button
-          size="lg"
-          onClick={() => router.push("/")}
-        >
-          Start Another Sprint
+        <Button size="lg" onClick={() => router.push("/")}>
+          ⚡ Start Another Sprint
         </Button>
 
         <Button
@@ -189,7 +201,7 @@ export default function ResultsPage({
           variant="ghost"
           onClick={() => router.push("/stats")}
         >
-          View Stats
+          View Stats →
         </Button>
       </div>
     </div>

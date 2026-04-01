@@ -59,6 +59,14 @@ export default function HomePage() {
           currentStreak: 0,
           longestStreak: 0,
           lastQuizDate: null,
+          streakFreezeUsedAt: null,
+          streakFreezeWeekStart: null,
+          dailyGoalProgress: 0,
+          dailyGoalDate: null,
+          dailyGoalCompleted: false,
+          timezone: null,
+          badges: [],
+          badgesLastCheckedAt: null,
         };
         await setDoc(doc(getClientDb(), "users", user.uid), newProfile);
         setProfile(newProfile);
@@ -118,41 +126,59 @@ export default function HomePage() {
       ? Math.round((profile.totalCorrect / profile.totalQuestions) * 100)
       : 0;
 
+  const streak = profile?.currentStreak ?? 0;
+  const firstName = profile?.displayName?.split(" ")[0] ?? "";
+
   return (
-    <div className="space-y-6 px-4 pt-6">
+    <div className="animate-fade-in space-y-6 px-4 pt-6">
+      {/* Greeting */}
       <div>
         <h1 className="text-2xl font-bold">
-          Hey{profile?.displayName ? `, ${profile.displayName.split(" ")[0]}` : ""} 👋
+          Hey{firstName ? `, ${firstName}` : ""} 👋
         </h1>
-        <p className="text-sm text-text-secondary">Ready for a quick sprint?</p>
+        <p className="text-sm text-text-secondary mt-0.5">
+          {streak > 0
+            ? `${streak}-day streak — keep it going!`
+            : "Ready for a quick sprint?"}
+        </p>
       </div>
 
+      {/* Stats row */}
       <div className="grid grid-cols-3 gap-3">
         <StatCard
           label="Streak"
-          value={profile?.currentStreak ?? 0}
+          value={streak}
           sub="days"
+          icon={streak > 0 ? "🔥" : "—"}
+          accent="streak"
         />
-        <StatCard label="Accuracy" value={`${accuracy}%`} sub="7-day" />
+        <StatCard
+          label="Accuracy"
+          value={`${accuracy}%`}
+          sub="all-time"
+          accent="accuracy"
+        />
         <StatCard
           label="Quizzes"
           value={profile?.totalQuizzes ?? 0}
-          sub="completed"
+          sub="done"
         />
       </div>
 
+      {/* Resume unfinished session */}
       {unfinishedSession && (
         <Button
           variant="secondary"
           size="lg"
           onClick={() => router.push(`/quiz/${unfinishedSession}`)}
         >
-          Continue Last Session →
+          ↩ Resume Last Session
         </Button>
       )}
 
+      {/* Start a sprint */}
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-text-secondary">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
           Start a Sprint
         </h2>
 
